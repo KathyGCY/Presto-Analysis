@@ -1,0 +1,282 @@
+---
+title: "Analyis of Presto from Bach Sonata No 1"
+author: "K.G."
+date: '2020-04-09'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+<style>
+   tbody tr:nth-child(odd){
+    background-color: #FFFFFF;
+  }
+</style>
+
+
+
+```{r, echo=T, warning=FALSE, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+options(repos="https://cran.rstudio.com" )
+
+
+requirements <- c("caret","lattice", "scatterplot3d", "ResourceSelection", "car", "corrplot", "smacof", "MASS", "CCA", "CCP", "GGally", "reshape2", "ggplot2", "MVN", "mvnormtest", "mclust", "vcd", "cluster", "rpart", "Hmisc", "foreign", "neuralnet", "fpc", "MTS", "plotly", "Rcpp", "ggvis", "googleVis", "rCharts", "plotly", "dplyr", "tidyr", "knitr","mclust","tsintermittent","GGally","ggplot2","scales","tictoc","dynlm","PerformanceAnalytics","stargazer","tseries","forecast","zoo","quantmod","dplyr","ggplot2","tidyr","scales","chron","stringr","gdata","zoo","lmtest","stringr","plyr","dplyr","data.table","lubridate","ggplot2","rmarkdown","knitr","kableExtra","forecast","prophet","zoo","openxlsx","tidyverse","tictoc","CombMSC","bsts","Rcpp","RColorBrewer","ggpubr","Metrics", "here")
+for(requirement in requirements){
+  if( !(requirement %in% installed.packages())) {
+    #print(requirement)
+    install.packages(requirement)
+    }
+  }
+lapply(requirements, require, character.only=T)
+
+merge.all.CM.aff = function(x,y){
+  merge(x,y,by = c("CM"),all = T)
+
+}
+base_dir = here::here()
+setwd(base_dir)
+library(kableExtra)
+
+subDir = "results"
+dir.create(file.path(base_dir, subDir), showWarnings = FALSE)
+
+mycolor.pink = c("#ffe9ec","#ffd0d7","#ffb6c1","#ff9dab","#ff8396","#ff6a80","#ed1556")
+mycolor.lavender = c("#e6e6fa","#d9d9fc","#c4c4fc","#acacfe","#9696fe")
+
+mycolor.blue = c("#003c3f","turquoise4","#00b7be","darkturquoise", "#81D8D0","aquamarine","paleturquoise1","lightskyblue1", "cornflowerblue","royalblue1","dodgerblue3","mediumblue","navy","midnightblue","#0a0a2c")
+
+library(readxl)
+
+#' Read multiple tabs in excel spreadsheet (`read_excel_allsheets`)
+#' @input filename: name of file
+#' @output output a list of files
+
+read_excel_allsheets <- function(filename, tibble = FALSE) {
+  # I prefer straight data.frames
+  # but if you like tidyverse tibbles (the default with read_excel)
+  # then just pass tibble = TRUE
+  sheets <- readxl::excel_sheets(filename)
+  x <- lapply(sheets, function(X) readxl::read_excel(filename, sheet = X))
+  if(!tibble) x <- lapply(x, as.data.frame)
+  names(x) <- sheets
+  x
+}
+
+
+
+```
+
+## Load Data
+```{r, echo=T, warning=FALSE, message = FALSE,fig.align="center", fig.height=7, fig.width=4}
+df_presto_raw = read_excel_allsheets("PRESTO ANALYSIS Part II.xlsx")$Sheet1
+tests_names <- paste0("Test", seq(1:9))
+formula = paste0(tests_names, collapse = "+")
+df_presto_calc <- as.data.table(df_presto_raw)
+string_execute <- paste0("df_presto_calc[, Num_of_Flag := ",formula,"]")
+eval(parse(text = string_execute))
+
+df_presto_melt <- melt(df_presto_raw, id.vars = c("Bar ID","String_Crossing_One_Bow","String_Crossing_Space_String","Position_Shifting","Left_Out_Note"))
+```
+
+## Summary by Bar
+```{r, echo=T, warning=FALSE, message = FALSE,fig.align="center", fig.height=7, fig.width=10}
+df_gg_by_bar <- df_presto_melt %>% 
+  
+  dplyr::mutate(   NUM_String_Crossing_One_Bow = ifelse(String_Crossing_One_Bow == "T", value, 0),
+                   NUM_String_Crossing_Space_String = ifelse(String_Crossing_Space_String == "T", value, 0),
+                   NUM_Position_Shifting = ifelse(Position_Shifting == "T", value, 0),
+                   NUM_Left_Out_Note = ifelse(Left_Out_Note == "T", value, 0)) %>% 
+  dplyr::group_by(`Bar ID`) %>% 
+  dplyr::summarise(Total_error = sum(value),
+                   String_Crossing_One_Bow = sum(NUM_String_Crossing_One_Bow),
+                   String_Crossing_Space_String = sum(NUM_String_Crossing_Space_String),
+                   Position_Shifting = sum(NUM_Position_Shifting),
+                   Left_Out_Note = sum(NUM_Left_Out_Note)) %>% 
+  melt(id.vars = "Bar ID") %>% 
+    as.data.table()
+
+df_gg_by_bar$variable <- as.character(df_gg_by_bar$variable)
+
+ gg_by_bar =  ggplot(df_gg_by_bar,aes(`Bar ID`,value,label = value)) +
+    geom_segment( aes(x=`Bar ID`, xend=`Bar ID`, y=0, yend=value), color="grey") +
+    geom_point( aes(x=`Bar ID`, y=value), color = "firebrick3", size=4, shape = 19) +
+    geom_text(color = "white", size = 2)+
+    #coord_flip()+
+    theme_light() +
+    facet_wrap(~variable, ncol = 1, scales = "fixed")+
+    scale_y_continuous( breaks = seq(0,10,2), limits = c(0,10))+ 
+    theme(
+      plot.title = element_text(size=10,hjust = 0.5),
+      legend.position = "none",
+      panel.border = element_blank(),
+      axis.text=element_text(size=10)) +
+    ggtitle("Error Tracker")
+
+print(gg_by_bar)
+
+png("Erro Tracker.png", width = 2000, height = 1500, res=130)
+print(gg_by_bar)
+dev.off()
+
+```
+
+\newpage
+
+## Test-Based Impact
+
+### String_Crossing_One_Bow
+
+```{r, echo=T, warning=FALSE, message = FALSE,fig.align="center"}
+test_String_Crossing_One_Bow <- df_presto_melt %>% 
+  dplyr::mutate(r = 1) %>% 
+  dplyr::group_by(String_Crossing_One_Bow) %>% 
+  dplyr::summarise(fail = sum(value),
+                   all = sum(r),
+                   success = all- fail)
+
+mat = rbind(test_String_Crossing_One_Bow$success,test_String_Crossing_One_Bow$fail)
+row.names(mat) <- c("No String_Crossing_One_Bow", "String_Crossing_One_Bow")
+colnames(mat) <-  c("Success","Fail")
+
+fisher.test(mat, alternative="greater")
+spine(xtabs(~String_Crossing_One_Bow+value, data=df_presto_melt))
+
+```
+
+\newpage
+
+### String_Crossing_Space_String
+
+```{r, echo=T, warning=FALSE, message = FALSE,fig.align="center"}
+test_String_Crossing_Space_String <- df_presto_melt %>% 
+  dplyr::mutate(r = 1) %>% 
+  dplyr::group_by(String_Crossing_Space_String) %>% 
+  dplyr::summarise(fail = sum(value),
+                   all = sum(r),
+                   success = all- fail)
+  
+
+mat = rbind(test_String_Crossing_Space_String$success,test_String_Crossing_Space_String$fail)
+row.names(mat) <- c("No String_Crossing_Space_String", "String_Crossing_Space_String")
+colnames(mat) <-  c("Success","Fail")
+
+fisher.test(mat, alternative="greater")
+spine(xtabs(~String_Crossing_Space_String+value, data=df_presto_melt))
+
+```
+
+\newpage
+
+### Position_Shifting
+
+```{r, echo=T, warning=FALSE, message = FALSE,fig.align="center"}
+test_Position_Shifting <- df_presto_melt %>% 
+  dplyr::mutate(r = 1) %>% 
+  dplyr::group_by(Position_Shifting) %>% 
+  dplyr::summarise(fail = sum(value),
+                   all = sum(r),
+                   success = all- fail)
+  
+
+mat = rbind(test_Position_Shifting$success,test_Position_Shifting$fail)
+row.names(mat) <- c("No Position_Shifting", "Position_Shifting")
+colnames(mat) <-  c("Success","Fail")
+
+fisher.test(mat, alternative="greater")
+
+spine(xtabs(~Position_Shifting+value, data=df_presto_melt))
+```
+
+\newpage
+
+### Left_Out_Note
+
+```{r, echo=T, warning=FALSE, message = FALSE,fig.align="center"}
+test_Left_Out_Note <- df_presto_melt %>% 
+  dplyr::mutate(r = 1) %>% 
+  dplyr::group_by(Left_Out_Note) %>% 
+  dplyr::summarise(fail = sum(value),
+                   all = sum(r),
+                   success = all- fail)
+  
+
+mat = rbind(test_Left_Out_Note$success,test_Left_Out_Note$fail)
+row.names(mat) <- c("No Left_Out_Note", "Left_Out_Note")
+colnames(mat) <-  c("Success","Fail")
+
+fisher.test(mat, alternative="greater")
+
+
+
+spine(xtabs(~Left_Out_Note+value, data=df_presto_melt))
+```
+
+\newpage
+
+## Model-Based Impact
+
+```{r, echo=T, warning=FALSE, message = FALSE,fig.align="center"}
+t.ctrl <- caret::trainControl(method = "repeatedcv", 
+                       number = 10,
+                       savePredictions = TRUE)
+tic()
+svm.grid <- expand.grid(C = 2^(1:3), sigma = seq(0.25, 2, length = 8))
+
+df_presto_melt_classify <- copy(df_presto_melt)
+df_presto_melt_classify$value <- 1-df_presto_melt_classify$value
+
+svm.train <- train(factor(value) ~ String_Crossing_One_Bow + String_Crossing_Space_String + Position_Shifting  + Left_Out_Note,
+  data = df_presto_melt_classify, 
+  method = "svmRadial",
+  trControl = t.ctrl, 
+  tuneGrid = svm.grid,
+  preProcess = c("center", "scale")
+)
+# confusionMatrix(svm.predict, factor(df_presto_melt$value))
+varImp(svm.train)
+toc()
+```
+
+## Interaction Terms
+
+Placeholder here for interaction terms where multiple factors impact on the success rate
+
+### String_Crossing_One_Bow + String_Crossing_Space_String
+
+```{r, echo=T, warning=FALSE, message = FALSE,fig.align="center"}
+structable(value~ String_Crossing_One_Bow + String_Crossing_Space_String, data = df_presto_melt)
+```
+
+### String_Crossing_One_Bow + Position_Shifting
+
+```{r, echo=T, warning=FALSE, message = FALSE,fig.align="center"}
+structable(value~ String_Crossing_One_Bow + Position_Shifting, data = df_presto_melt)
+```
+
+### String_Crossing_One_Bow + Left_Out_Note
+
+```{r, echo=T, warning=FALSE, message = FALSE,fig.align="center"}
+structable(value~ String_Crossing_One_Bow + Left_Out_Note, data = df_presto_melt)
+```
+
+
+### String_Crossing_Space_String + Position_Shifting
+
+```{r, echo=T, warning=FALSE, message = FALSE,fig.align="center"}
+structable(value~ String_Crossing_Space_String + Position_Shifting, data = df_presto_melt)
+```
+
+
+### String_Crossing_Space_String + Left_Out_Note
+
+```{r, echo=T, warning=FALSE, message = FALSE,fig.align="center"}
+structable(value~ String_Crossing_Space_String + Left_Out_Note, data = df_presto_melt)
+```
+
+### Position_Shifting + Left_Out_Note
+
+```{r, echo=T, warning=FALSE, message = FALSE,fig.align="center"}
+structable(value~ Position_Shifting + Left_Out_Note, data = df_presto_melt)
+
+```
